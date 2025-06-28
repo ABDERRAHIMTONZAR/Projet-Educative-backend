@@ -1,0 +1,23 @@
+{
+  "development": {
+    "username": "postgres",
+    "password": "azerty123",
+    "database": "EvalyaSmart",
+    "host": "localhost",
+    "dialect": "postgres"
+  },
+  "test": {
+    "username": "postgres",
+    "password": "azerty123",
+    "database": "EvalyaSmart",
+    "host": "localhost",
+    "dialect": "postgres"
+  },
+  "production": {
+    "username": "postgres",
+    "password": "azerty123",
+    "database": "EvalyaSmart",
+    "host": "localhost",
+    "dialect": "postgres"
+  }
+}
