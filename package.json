@@ -2,9 +2,11 @@
   "name": "mon-projet-express",
   "version": "1.0.0",
   "main": "index.ts",
+  "type": "module",
+
   "scripts": {
     "build": "tsc",
-    "start": "node dist/app.js",
+    "start": "node dist/app.ts",
       "dev": "nodemon --exec ts-node app.ts"
   },
   "dependencies": {
