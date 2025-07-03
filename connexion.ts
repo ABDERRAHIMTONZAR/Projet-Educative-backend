@@ -1,17 +1,25 @@
 import { Sequelize } from 'sequelize';
 
-const sequelize = new Sequelize('postgres://postgres:azerty123@localhost:5432/EvalyaSmart', {
+const sequelize = new Sequelize(process.env.DATABASE_URL!, {
   dialect: 'postgres',
+  protocol: 'postgres',
+  dialectOptions: {
+    ssl: {
+      require: true,
+      rejectUnauthorized: false, // Important pour Railway ou Render
+    },
+  },
 });
 
 async function testConnection(): Promise<void> {
   try {
     await sequelize.authenticate();
-    console.log('La connexion à la base de données a réussi.');
+    console.log('✅ Connexion réussie à la base de données');
   } catch (error) {
-    console.error('Impossible de se connecter à la base de données:', error);
+    console.error('❌ Échec de connexion à la base de données :', error);
   }
 }
+
 testConnection();
 
 export default sequelize;
