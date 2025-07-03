@@ -11,7 +11,7 @@ const app = (0, express_1.default)();
 app.use(express_1.default.json());
 app.use((0, cors_1.default)());
 app.use('/api', auth_route_1.default);
-const port = process.env.PORT || 5001; // utilise celui de Railway en priorité
+const port = process.env.PORT || 5001;
 app.listen(port, () => {
     console.log(`Server is running on port ${port}`);
 });
