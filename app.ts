@@ -10,7 +10,7 @@ app.use(cors());
 
 app.use('/api', soumissionRouter);
 
-const port =  5001;
+const port = process.env.PORT || 5001; // utilise celui de Railway en priorité
 app.listen(port, () => {
     console.log(`Server is running on port ${port}`);
 });
