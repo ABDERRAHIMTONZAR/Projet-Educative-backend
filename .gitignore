@@ -22,3 +22,4 @@ DB_PORT=5432
 DB_NAME=EvalyaSmart
 DB_USER=postgres
 DB_PASSWORD=azerty123 
+dist/
