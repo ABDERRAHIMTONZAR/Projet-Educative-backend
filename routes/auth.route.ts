@@ -91,8 +91,61 @@ router.post('/login', async (req:any, res: any) => {
       res.status(401).send("Mot de passe incorrect");
     }
   } catch (error) {
-    console.error(error);
-    res.status(500).send("Une erreur est survenue lors de la connexion.");
+    console.error("Erreur dans /login :", error);
+  }
+});router.post('/login', async (req:any, res: any) => {
+  const { email, password } = req.body;
+  try {
+    let user = await Eleve.findOne({ where: { email } });
+    let role = "eleve";
+    let userId;
+     
+    if (!user) {
+      user = await Professeur.findOne({ where: { email } });
+      role = "enseignant";
+    }
+    if (!user) {
+      user = await Parent.findOne({ where: { email } });
+      role = "parent";
+    }
+    if (!user) {
+      user = await Direction.findOne({ where: { email } });
+      role = "direction";
+    }
+
+    if (!user) {
+       res.status(404).send("Utilisateur introuvable");
+       return;
+    }
+
+    // Récupération de l'ID selon le rôle
+    switch(role) {
+      case 'eleve':
+        userId = user.getDataValue('id_eleve');
+        break;
+      case 'enseignant':
+        userId = user.getDataValue('id_professeur');
+        break;
+      case 'parent':
+        userId = user.getDataValue('id_parent');
+        break;
+      case 'direction':
+        userId = user.getDataValue('id_direction');
+        break;
+    }
+
+    // Vérification du mot de passe
+    // const isPasswordValid = await bcrypt.compare(password, user.getDataValue('password'));
+
+      const token = jwt.sign(
+        { id: userId, role: role },
+        SECRET_KEY,
+        { expiresIn: '2h' }
+      );
+      res.json({ token, role });
+   
+  } catch (error) {
+    console.error("Erreur dans /login :", error);
   }
 });
 
