@@ -6,7 +6,7 @@ import dotenv from 'dotenv';
 import './connexion.js';
 
 // Importation des routes (ex: /api/login, etc.)
-import soumissionRouter from './routes/auth.route';
+import soumissionRouter from './routes/auth.route.js';
 
 dotenv.config();
 

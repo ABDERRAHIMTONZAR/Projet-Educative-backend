@@ -4,7 +4,7 @@ import dotenv from 'dotenv';
 // Connexion à ta base de données
 import './connexion.js';
 // Importation des routes (ex: /api/login, etc.)
-import soumissionRouter from './routes/auth.route';
+import soumissionRouter from './routes/auth.route.js';
 dotenv.config();
 const app = express();
 const port = process.env.PORT || 5001;
