@@ -7,7 +7,7 @@ import path from 'path';
 import { S3Client, ListObjectsV2Command, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { Op, QueryTypes } from 'sequelize';
-import '../connexion';
+import '../connexion.js';
 import sequelize from '../connexion';
 import { Eleve, Professeur, Parent, Direction, Examen, Devoir, Classe, Matiere } from '../models/modele';
 import nodemailer from 'nodemailer';
