@@ -3,10 +3,7 @@
 import { Router } from 'express';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
-import axios from 'axios';
-import fs from 'fs/promises';
-import path from 'path';
-import { S3Client, ListObjectsV2Command, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { Op, QueryTypes } from 'sequelize';
 import '../connexion.js';
@@ -14,10 +11,6 @@ import sequelize from '../connexion.js';
 import { Eleve, Professeur, Parent, Direction, Examen, Devoir, Classe, Matiere } from '../models/modele.js';
 import nodemailer from 'nodemailer';
 import dotenv from 'dotenv';
-import { tmpdir } from "os";
-import poppler from "pdf-poppler";
-import sharp from "sharp";
-import mammoth from 'mammoth';
 dotenv.config();
 if (process.platform === 'win32') {
     // Code avec pdf2pic ou node-poppler
@@ -923,217 +916,215 @@ router.get('/getdevoirs', async (req, res) => {
         res.status(500).json({ error: 'Erreur lors de la récupération des devoirs.' });
     }
 });
-import OpenAI from 'openai';
-const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
-});
-const bucket = 'evalyasmart';
-function streamToBuffer(readableStream) {
-    return new Promise((resolve, reject) => {
-        const chunks = [];
-        readableStream.on("data", (chunk) => chunks.push(chunk));
-        readableStream.on("error", reject);
-        readableStream.on("end", () => resolve(Buffer.concat(chunks)));
-    });
-}
-async function convertPdfToImages(pdfBuffer, fileName) {
-    const tempDir = tmpdir();
-    const pdfPath = path.join(tempDir, fileName);
-    await fs.writeFile(pdfPath, pdfBuffer);
-    const opts = {
-        format: "jpeg",
-        out_dir: tempDir,
-        out_prefix: `${path.parse(fileName).name}-page`,
-        page: undefined,
-    };
-    await poppler.convert(pdfPath, opts);
-    const files = await fs.readdir(tempDir);
-    const imageFiles = files
-        .filter((f) => f.startsWith(`${path.parse(fileName).name}-page`) && f.endsWith(".jpg"))
-        .map((f) => path.join(tempDir, f));
-    await fs.unlink(pdfPath);
-    return imageFiles;
-}
-async function optimizeImageForOCR(imageBuffer) {
-    return sharp(imageBuffer).resize(2000).sharpen().greyscale().normalize().toBuffer();
-}
-async function callGoogleVisionAPI(imageBuffer, apiKey) {
-    const body = {
-        requests: [
-            {
-                image: { content: imageBuffer.toString("base64") },
-                features: [{ type: "TEXT_DETECTION" }],
-            },
-        ],
-    };
-    const response = await axios.post(`https://vision.googleapis.com/v1/images:annotate?key=${apiKey}`, body);
-    const resData = response.data.responses[0];
-    if (resData.error)
-        throw new Error(resData.error.message);
-    const text = resData.textAnnotations?.[0]?.description?.trim();
-    return text || "[Aucun texte détecté]";
-}
-async function corrigerTexteAvecChatGPT(texte) {
-    // Vérifier si le texte est vide
-    if (!texte || texte.trim() === '') {
-        return "Aucun texte à corriger.";
-    }
-    // Vérifier si la clé API est disponible
-    if (!process.env.OPENAI_API_KEY) {
-        console.error("Clé API OpenAI manquante");
-        return "Erreur de configuration : Clé API manquante.";
-    }
-    try {
-        const completion = await openai.chat.completions.create({
-            model: "gpt-3.5-turbo",
-            messages: [
-                {
-                    role: "system",
-                    content: "Corrige ces réponses en PHP. Indique si chaque réponse est correcte (✅) ou incorrecte (❌), explique pourquoi, et donne la bonne réponse. Note sur 10. Concentre-toi sur les concepts PHP comme les variables ($), les opérateurs de comparaison (== vs ===), les fonctions, les sessions, et la gestion des erreurs."
-                },
-                {
-                    role: "user",
-                    content: texte
-                }
-            ],
-            temperature: 0.1,
-            max_tokens: 2000
-        });
-        const response = completion.choices[0].message?.content;
-        if (!response) {
-            throw new Error("Pas de réponse de l'API");
-        }
-        return response;
-    }
-    catch (error) {
-        console.error("Erreur API:", error);
-        // Gérer spécifiquement les erreurs de quota
-        if (error.status === 429 || error.code === 'insufficient_quota') {
-            console.error("Quota API dépassé");
-            return "Le service de correction est temporairement indisponible car le quota d'utilisation a été dépassé. Veuillez contacter l'administrateur pour mettre à jour les limites d'utilisation.";
-        }
-        // Gérer les erreurs d'authentification
-        if (error.status === 401) {
-            console.error("Erreur d'authentification API");
-            return "Erreur de configuration : Clé API invalide.";
-        }
-        return "Erreur lors de la correction. Veuillez réessayer.";
-    }
-}
-async function recupererCorrection() {
-    try {
-        const listCommand = new ListObjectsV2Command({
-            Bucket: bucket,
-            Prefix: "corrections/",
-        });
-        const data = await s3Client.send(listCommand);
-        if (!data.Contents || data.Contents.length === 0)
-            return [];
-        const filesWithData = await Promise.all(data.Contents.map(async (file) => {
-            if (!file.Key)
-                return null;
-            const getObjectCommand = new GetObjectCommand({ Bucket: bucket, Key: file.Key });
-            const s3Object = await s3Client.send(getObjectCommand);
-            const fileBuffer = await streamToBuffer(s3Object.Body);
-            const ext = path.extname(file.Key).toLowerCase();
-            let fileType = "unknown";
-            if (ext === ".pdf")
-                fileType = "pdf";
-            else if ([".jpg", ".jpeg", ".png", ".bmp"].includes(ext))
-                fileType = "image";
-            else if ([".doc", ".docx"].includes(ext))
-                fileType = "document";
-            else if ([".txt", ".rtf"].includes(ext))
-                fileType = "text";
-            return { fileName: file.Key, buffer: fileBuffer, fileType, extension: ext };
-        }));
-        return filesWithData.filter((f) => f !== null);
-    }
-    catch (err) {
-        console.error("Erreur récupération fichiers:", err);
-        return [];
-    }
-}
-async function extractTexts(req, res) {
-    try {
-        const files = await recupererCorrection();
-        const apiKey = process.env.GOOGLE_API_KEY;
-        if (!apiKey) {
-            res.status(500).json({ error: "Clé API Google manquante" });
-            return;
-        }
-        const results = await Promise.all(files.map(async (file) => {
-            try {
-                if (file.fileType === "pdf") {
-                    const imagePaths = await convertPdfToImages(file.buffer, path.basename(file.fileName));
-                    const extractedTexts = await Promise.all(imagePaths.map(async (imgPath) => {
-                        const imgBuffer = await fs.readFile(imgPath);
-                        const optimized = await optimizeImageForOCR(imgBuffer);
-                        const text = await callGoogleVisionAPI(optimized, apiKey);
-                        await fs.unlink(imgPath);
-                        return text;
-                    }));
-                    const original = extractedTexts.join(" ").replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
-                    const corrected = await corrigerTexteAvecChatGPT(original);
-                    return {
-                        fileName: file.fileName,
-                        type: file.fileType,
-                        original,
-                        corrected,
-                        status: original === corrected ? "non corrigé" : "corrigé",
-                    };
-                }
-                if (file.fileType === "image") {
-                    const optimized = await optimizeImageForOCR(file.buffer);
-                    const original = await callGoogleVisionAPI(optimized, apiKey);
-                    const cleanedOriginal = original.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
-                    const corrected = await corrigerTexteAvecChatGPT(cleanedOriginal);
-                    return {
-                        fileName: file.fileName,
-                        type: file.fileType,
-                        original: cleanedOriginal,
-                        corrected,
-                        status: cleanedOriginal === corrected ? "non corrigé" : "corrigé",
-                    };
-                }
-                if (file.fileType === "document") {
-                    const result = await mammoth.convertToHtml({ buffer: file.buffer });
-                    const original = result.value.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-                    const corrected = await corrigerTexteAvecChatGPT(original);
-                    return {
-                        fileName: file.fileName,
-                        type: file.fileType,
-                        original,
-                        corrected,
-                        status: original === corrected ? "non corrigé" : "corrigé",
-                    };
-                }
-                if (file.fileType === "text") {
-                    const original = file.buffer.toString("utf-8").replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
-                    const corrected = await corrigerTexteAvecChatGPT(original);
-                    return {
-                        fileName: file.fileName,
-                        type: file.fileType,
-                        original,
-                        corrected,
-                        status: original === corrected ? "non corrigé" : "corrigé",
-                    };
-                }
-                return { fileName: file.fileName, type: file.fileType, error: "Type non supporté" };
-            }
-            catch (err) {
-                return { fileName: file.fileName, type: file.fileType, error: err.message };
-            }
-        }));
-        res.json(results);
-    }
-    catch (err) {
-        console.error("Erreur serveur:", err);
-        res.status(500).json({ error: "Erreur serveur" });
-    }
-}
-// Route Express pour tester
-router.post("/test", async (req, res) => {
-    await extractTexts(req, res);
-});
+// import OpenAI from 'openai';
+// const openai = new OpenAI({
+//   apiKey: process.env.OPENAI_API_KEY,
+// });
+// const bucket = 'evalyasmart';
+// function streamToBuffer(readableStream: Readable): Promise<Buffer> {
+//   return new Promise((resolve, reject) => {
+//     const chunks: Buffer[] = [];
+//     readableStream.on("data", (chunk: Buffer) => chunks.push(chunk));
+//     readableStream.on("error", reject);
+//     readableStream.on("end", () => resolve(Buffer.concat(chunks)));
+//   });
+// }
+// async function convertPdfToImages(pdfBuffer: Buffer, fileName: string): Promise<string[]> {
+//   const tempDir = tmpdir();
+//   const pdfPath = path.join(tempDir, fileName);
+//   await fs.writeFile(pdfPath, pdfBuffer);
+//   const opts = {
+//     format: "jpeg",
+//     out_dir: tempDir,
+//     out_prefix: `${path.parse(fileName).name}-page`,
+//     page: undefined,
+//   };
+//   await poppler.convert(pdfPath, opts);
+//   const files = await fs.readdir(tempDir);
+//   const imageFiles = files
+//     .filter((f) => f.startsWith(`${path.parse(fileName).name}-page`) && f.endsWith(".jpg"))
+//     .map((f) => path.join(tempDir, f));
+//   await fs.unlink(pdfPath);
+//   return imageFiles;
+// }
+// async function optimizeImageForOCR(imageBuffer: Buffer): Promise<Buffer> {
+//   return sharp(imageBuffer).resize(2000).sharpen().greyscale().normalize().toBuffer();
+// }
+// async function callGoogleVisionAPI(imageBuffer: Buffer, apiKey: string): Promise<string> {
+//   const body = {
+//     requests: [
+//       {
+//         image: { content: imageBuffer.toString("base64") },
+//         features: [{ type: "TEXT_DETECTION" }],
+//       },
+//     ],
+//   };
+//   const response = await axios.post(
+//     `https://vision.googleapis.com/v1/images:annotate?key=${apiKey}`,
+//     body
+//   );
+//   const resData = response.data.responses[0];
+//   if (resData.error) throw new Error(resData.error.message);
+//   const text = resData.textAnnotations?.[0]?.description?.trim();
+//   return text || "[Aucun texte détecté]";
+// }
+// async function corrigerTexteAvecChatGPT(texte: string): Promise<string> {
+//   // Vérifier si le texte est vide
+//   if (!texte || texte.trim() === '') {
+//     return "Aucun texte à corriger.";
+//   }
+//   // Vérifier si la clé API est disponible
+//   if (!process.env.OPENAI_API_KEY) {
+//     console.error("Clé API OpenAI manquante");
+//     return "Erreur de configuration : Clé API manquante.";
+//   }
+//   try {
+//     const completion = await openai.chat.completions.create({
+//       model: "gpt-3.5-turbo",
+//       messages: [
+//         {
+//           role: "system",
+//           content: "Corrige ces réponses en PHP. Indique si chaque réponse est correcte (✅) ou incorrecte (❌), explique pourquoi, et donne la bonne réponse. Note sur 10. Concentre-toi sur les concepts PHP comme les variables ($), les opérateurs de comparaison (== vs ===), les fonctions, les sessions, et la gestion des erreurs."
+//         },
+//         {
+//           role: "user",
+//           content: texte
+//         }
+//       ],
+//       temperature: 0.1,
+//       max_tokens: 2000
+//     });
+//     const response = completion.choices[0].message?.content;
+//     if (!response) {
+//       throw new Error("Pas de réponse de l'API");
+//     }
+//     return response;
+//   } catch (error: any) {
+//     console.error("Erreur API:", error);
+//     // Gérer spécifiquement les erreurs de quota
+//     if (error.status === 429 || error.code === 'insufficient_quota') {
+//       console.error("Quota API dépassé");
+//       return "Le service de correction est temporairement indisponible car le quota d'utilisation a été dépassé. Veuillez contacter l'administrateur pour mettre à jour les limites d'utilisation.";
+//     }
+//     // Gérer les erreurs d'authentification
+//     if (error.status === 401) {
+//       console.error("Erreur d'authentification API");
+//       return "Erreur de configuration : Clé API invalide.";
+//     }
+//     return "Erreur lors de la correction. Veuillez réessayer.";
+//   }
+// }
+// async function recupererCorrection() {
+//   try {
+//     const listCommand = new ListObjectsV2Command({
+//       Bucket: bucket,
+//       Prefix: "corrections/",
+//     });
+//     const data = await s3Client.send(listCommand);
+//     if (!data.Contents || data.Contents.length === 0) return [];
+//     const filesWithData = await Promise.all(
+//       data.Contents.map(async (file) => {
+//         if (!file.Key) return null;
+//         const getObjectCommand = new GetObjectCommand({ Bucket: bucket, Key: file.Key });
+//         const s3Object = await s3Client.send(getObjectCommand);
+//         const fileBuffer = await streamToBuffer(s3Object.Body as Readable);
+//         const ext = path.extname(file.Key).toLowerCase();
+//         let fileType = "unknown";
+//         if (ext === ".pdf") fileType = "pdf";
+//         else if ([".jpg", ".jpeg", ".png", ".bmp"].includes(ext)) fileType = "image";
+//         else if ([".doc", ".docx"].includes(ext)) fileType = "document";
+//         else if ([".txt", ".rtf"].includes(ext)) fileType = "text";
+//         return { fileName: file.Key, buffer: fileBuffer, fileType, extension: ext };
+//       })
+//     );
+//     return filesWithData.filter((f) => f !== null);
+//   } catch (err) {
+//     console.error("Erreur récupération fichiers:", err);
+//     return [];
+//   }
+// }
+// async function extractTexts(req: Request, res: Response): Promise<void> {
+//   try {
+//     const files = await recupererCorrection();
+//     const apiKey = process.env.GOOGLE_API_KEY;
+//     if (!apiKey) {
+//       res.status(500).json({ error: "Clé API Google manquante" });
+//       return;
+//     }
+//     const results = await Promise.all(
+//       files.map(async (file) => {
+//         try {
+//           if (file.fileType === "pdf") {
+//             const imagePaths = await convertPdfToImages(file.buffer, path.basename(file.fileName));
+//             const extractedTexts = await Promise.all(
+//               imagePaths.map(async (imgPath) => {
+//                 const imgBuffer = await fs.readFile(imgPath);
+//                 const optimized = await optimizeImageForOCR(imgBuffer);
+//                 const text = await callGoogleVisionAPI(optimized, apiKey);
+//                 await fs.unlink(imgPath);
+//                 return text;
+//               })
+//             );
+//             const original = extractedTexts.join(" ").replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
+//             const corrected = await corrigerTexteAvecChatGPT(original);
+//             return {
+//               fileName: file.fileName,
+//               type: file.fileType,
+//               original,
+//               corrected,
+//               status: original === corrected ? "non corrigé" : "corrigé",
+//             };
+//           }
+//           if (file.fileType === "image") {
+//             const optimized = await optimizeImageForOCR(file.buffer);
+//             const original = await callGoogleVisionAPI(optimized, apiKey);
+//             const cleanedOriginal = original.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
+//             const corrected = await corrigerTexteAvecChatGPT(cleanedOriginal);
+//             return {
+//               fileName: file.fileName,
+//               type: file.fileType,
+//               original: cleanedOriginal,
+//               corrected,
+//               status: cleanedOriginal === corrected ? "non corrigé" : "corrigé",
+//             };
+//           }
+//           if (file.fileType === "document") {
+//             const result = await mammoth.convertToHtml({ buffer: file.buffer });
+//             const original = result.value.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+//             const corrected = await corrigerTexteAvecChatGPT(original);
+//             return {
+//               fileName: file.fileName,
+//               type: file.fileType,
+//               original,
+//               corrected,
+//               status: original === corrected ? "non corrigé" : "corrigé",
+//             };
+//           }
+//           if (file.fileType === "text") {
+//             const original = file.buffer.toString("utf-8").replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
+//             const corrected = await corrigerTexteAvecChatGPT(original);
+//             return {
+//               fileName: file.fileName,
+//               type: file.fileType,
+//               original,
+//               corrected,
+//               status: original === corrected ? "non corrigé" : "corrigé",
+//             };
+//           }
+//           return { fileName: file.fileName, type: file.fileType, error: "Type non supporté" };
+//         } catch (err: any) {
+//           return { fileName: file.fileName, type: file.fileType, error: err.message };
+//         }
+//       })
+//     );
+//     res.json(results);
+//   } catch (err: any) {
+//     console.error("Erreur serveur:", err);
+//     res.status(500).json({ error: "Erreur serveur" });
+//   }
+// }
+// // Route Express pour tester
+// router.post("/test", async (req: Request, res: Response) => {
+//   await extractTexts(req, res);
+// });
 export default router;
