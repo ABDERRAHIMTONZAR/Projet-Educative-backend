@@ -1,5 +1,5 @@
 import { DataTypes } from 'sequelize';
-import sequelize from '../connexion';
+import sequelize from '../connexion.js';
 
 // Direction model
 const Direction = sequelize.define('Direction', {

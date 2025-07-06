@@ -1,3 +1,5 @@
+// Déclenche recompilation pour Railway
+// Déclenche recompilation pour Railway
 import { Router } from 'express';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
@@ -9,7 +11,7 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { Op, QueryTypes } from 'sequelize';
 import '../connexion.js';
 import sequelize from '../connexion.js';
-import { Eleve, Professeur, Parent, Direction, Examen, Devoir, Classe, Matiere } from '../models/modele';
+import { Eleve, Professeur, Parent, Direction, Examen, Devoir, Classe, Matiere } from '../models/modele.js';
 import nodemailer from 'nodemailer';
 import dotenv from 'dotenv';
 import { tmpdir } from "os";
