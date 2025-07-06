@@ -2,7 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 // Connexion à ta base de données
-import './connexion';
+import './connexion.js';
 // Importation des routes (ex: /api/login, etc.)
 import soumissionRouter from './routes/auth.route';
 dotenv.config();
