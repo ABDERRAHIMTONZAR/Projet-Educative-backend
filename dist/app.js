@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+// npx tsc
 // Connexion à ta base de données
 import './connexion.js';
 // Importation des routes (ex: /api/login, etc.)
