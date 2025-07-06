@@ -13,7 +13,11 @@ dotenv.config();
 
 const app = express();
 const port = process.env.PORT || 5001;
-
+if (process.platform === 'win32') {
+  // Code avec pdf2pic ou node-poppler
+} else {
+  console.log("📦 PDF preview non supportée sur Linux");
+}
 // Middleware
 app.use(cors());
 app.use(express.json());

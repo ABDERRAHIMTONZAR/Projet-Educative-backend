@@ -19,6 +19,12 @@ import poppler from "pdf-poppler";
 import sharp from "sharp";
 import mammoth from 'mammoth';
 dotenv.config();
+if (process.platform === 'win32') {
+    // Code avec pdf2pic ou node-poppler
+}
+else {
+    console.log("📦 PDF preview non supportée sur Linux");
+}
 ///LOGINNNN
 const SECRET_KEY = process.env.SECRET_KEY || 'secret';
 const router = Router();
